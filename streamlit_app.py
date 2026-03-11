@@ -11,12 +11,14 @@ st.set_page_config(
 st.title("💳 Tableau de bord interactif - Défaut de paiement")
 st.write("Analyse du risque de défaut des clients détenteurs de cartes de crédit.")
 
+# ------------------------------
 # Chargement des données
+# ------------------------------
 df = pd.read_csv("data/training.csv", sep=None, engine="python")
 df.columns = [str(col).strip().upper() for col in df.columns]
 
 # Vérification minimale
-required_cols = ["DEF", "PAY_1", "LIMIT_BAL", "SEX", "EDUCATION", "MARRIAGE", "AGE"]
+required_cols = ["DEF", "PAY_1", "LIMIT_BAL", "SEX", "EDUCATION", "MARRIAGE", "AGE", "BILL_AMT1"]
 missing = [c for c in required_cols if c not in df.columns]
 
 if missing:
@@ -25,9 +27,8 @@ if missing:
     st.stop()
 
 # ------------------------------
-# Transformation des codes en libellés métier
+# Libellés métier
 # ------------------------------
-
 sex_map = {
     1: "Homme",
     2: "Femme"
@@ -62,9 +63,8 @@ df["AGE_GROUP"] = pd.cut(
 )
 
 # ------------------------------
-# Sidebar filtres
+# Filtres interactifs
 # ------------------------------
-
 st.sidebar.header("Filtres interactifs")
 
 filtered_df = df.copy()
@@ -93,7 +93,9 @@ if selected_marriage != "Tous":
 if selected_age != "Tous":
     filtered_df = filtered_df[filtered_df["AGE_GROUP"].astype(str) == selected_age]
 
+# ------------------------------
 # KPI
+# ------------------------------
 taux_defaut = filtered_df["DEF"].mean() * 100
 nb_clients = len(filtered_df)
 
@@ -103,7 +105,10 @@ col2.metric("Nombre de clients", f"{nb_clients}")
 
 st.divider()
 
-# Graphique 1 : taux de défaut selon PAY_1
+# ------------------------------
+# Graphique 1 : Bar chart
+# Taux de défaut selon PAY_1
+# ------------------------------
 st.subheader("Impact de l'historique de paiement sur le défaut")
 
 pay1_chart = (
@@ -122,7 +127,10 @@ fig1.update_layout(yaxis_tickformat=".0%")
 
 st.plotly_chart(fig1, use_container_width=True)
 
-# Graphique 2 : taux de défaut selon LIMIT_BAL
+# ------------------------------
+# Graphique 2 : Courbe
+# Taux de défaut selon LIMIT_BAL
+# ------------------------------
 st.subheader("Impact de la limite de crédit sur le défaut")
 
 filtered_df["LIMIT_BIN"] = pd.cut(filtered_df["LIMIT_BAL"], bins=10)
@@ -133,10 +141,11 @@ limit_chart = (
 
 limit_chart["LIMIT_BIN"] = limit_chart["LIMIT_BIN"].astype(str)
 
-fig2 = px.bar(
+fig2 = px.line(
     limit_chart,
     x="LIMIT_BIN",
     y="DEF",
+    markers=True,
     labels={"LIMIT_BIN": "Tranches de limite de crédit", "DEF": "Taux de défaut"}
 )
 fig2.update_layout(
@@ -146,13 +155,15 @@ fig2.update_layout(
 
 st.plotly_chart(fig2, use_container_width=True)
 
-# Graphique 3 : taux de défaut selon le sexe
+# ------------------------------
+# Graphique 3 : Bar chart
+# Taux de défaut selon le sexe
+# ------------------------------
 st.subheader("Taux de défaut selon le sexe")
 
 sex_chart = (
     filtered_df.groupby("SEX_LABEL", as_index=False)["DEF"]
     .mean()
-    .sort_values("SEX_LABEL")
 )
 
 fig3 = px.bar(
@@ -165,7 +176,10 @@ fig3.update_layout(yaxis_tickformat=".0%")
 
 st.plotly_chart(fig3, use_container_width=True)
 
-# Graphique 4 : taux de défaut selon le niveau d'éducation
+# ------------------------------
+# Graphique 4 : Bar chart
+# Taux de défaut selon le niveau d'éducation
+# ------------------------------
 st.subheader("Taux de défaut selon le niveau d'éducation")
 
 edu_chart = (
@@ -183,23 +197,48 @@ fig4.update_layout(yaxis_tickformat=".0%")
 
 st.plotly_chart(fig4, use_container_width=True)
 
-# Graphique 5 : répartition des clients par tranche d'âge
-st.subheader("Répartition des clients par tranche d'âge")
+# ------------------------------
+# Graphique 5 : Histogramme
+# Distribution de l'âge
+# ------------------------------
+st.subheader("Distribution de l'âge des clients")
 
-age_chart = (
-    filtered_df.groupby("AGE_GROUP", as_index=False)
-    .size()
-)
-
-fig5 = px.bar(
-    age_chart,
-    x="AGE_GROUP",
-    y="size",
-    labels={"AGE_GROUP": "Tranche d'âge", "size": "Nombre de clients"}
+fig5 = px.histogram(
+    filtered_df,
+    x="AGE",
+    nbins=20,
+    labels={"AGE": "Âge"}
 )
 
 st.plotly_chart(fig5, use_container_width=True)
 
+# ------------------------------
+# Graphique 6 : Scatter plot
+# Relation entre limite de crédit et montant facturé
+# ------------------------------
+st.subheader("Relation entre limite de crédit et montant facturé")
+
+scatter_df = filtered_df.copy()
+scatter_df["DEF_LABEL"] = scatter_df["DEF"].map({0: "Pas de défaut", 1: "Défaut"})
+
+fig6 = px.scatter(
+    scatter_df,
+    x="LIMIT_BAL",
+    y="BILL_AMT1",
+    color="DEF_LABEL",
+    labels={
+        "LIMIT_BAL": "Limite de crédit",
+        "BILL_AMT1": "Montant facturé",
+        "DEF_LABEL": "Statut"
+    },
+    opacity=0.6
+)
+
+st.plotly_chart(fig6, use_container_width=True)
+
+# ------------------------------
+# Lecture décisionnelle
+# ------------------------------
 st.divider()
 
 st.subheader("Lecture décisionnelle")
@@ -208,7 +247,7 @@ st.write(
 - Le taux de défaut global permet d’évaluer rapidement le niveau de risque du portefeuille client.
 - L’historique de paiement (PAY_1) est le facteur le plus important : plus le retard récent augmente, plus le risque de défaut augmente.
 - La limite de crédit permet d’identifier des profils financiers plus ou moins risqués.
-- Les graphiques complémentaires permettent d’analyser le risque selon le sexe, le niveau d’éducation et la tranche d’âge.
+- Les graphiques complémentaires permettent d’analyser le risque selon le sexe, le niveau d’éducation et l’âge.
 - Les filtres interactifs permettent à la direction commerciale d’analyser des segments spécifiques de clients.
 """
 )
