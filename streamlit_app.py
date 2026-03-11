@@ -1,151 +1,50 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import plotly.express as px
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+st.set_page_config(page_title="Dashboard Défaut Paiement", page_icon="💳", layout="wide")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+st.title("💳 Tableau de bord interactif - Défaut de paiement")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+st.write("Analyse du risque de défaut des clients détenteurs de cartes de crédit.")
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+# Charger les données
+df = pd.read_csv("data/training.csv")
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# KPI
+taux_defaut = df["DEF"].mean()
+nb_clients = len(df)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+col1, col2 = st.columns(2)
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+col1.metric("Taux de défaut", f"{taux_defaut:.2%}")
+col2.metric("Nombre de clients", nb_clients)
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+st.divider()
 
-    return gdp_df
+# Graphique PAY_1
+st.subheader("Impact de l'historique de paiement sur le défaut")
 
-gdp_df = get_gdp_data()
+pay1 = df.groupby("PAY_1")["DEF"].mean().reset_index()
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+fig1 = px.bar(pay1, x="PAY_1", y="DEF")
+st.plotly_chart(fig1, use_container_width=True)
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+# Graphique LIMIT_BAL
+st.subheader("Impact de la limite de crédit")
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+df["LIMIT_BIN"] = pd.cut(df["LIMIT_BAL"], bins=10)
 
-# Add some spacing
-''
-''
+limit_chart = df.groupby("LIMIT_BIN")["DEF"].mean().reset_index()
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+fig2 = px.bar(limit_chart, x="LIMIT_BIN", y="DEF")
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+st.plotly_chart(fig2, use_container_width=True)
 
-countries = gdp_df['Country Code'].unique()
+# Filtres
+st.sidebar.header("Filtres")
 
-if not len(countries):
-    st.warning("Select at least one country")
+sex = st.sidebar.selectbox("Sexe", ["Tous"] + sorted(df["SEX"].unique().tolist()))
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+if sex != "Tous":
+    df = df[df["SEX"] == sex]
